@@ -220,7 +220,18 @@ isr:
         mov     cl, bl
         mov     [bp+4], cx             ; CX
         mov     dh, FAKE_HEADS-1       ; max head
-        mov     dl, 1                  ; one fixed disk
+        ; DL = number of hard disks. This is how DOS learns that drive 81h
+        ; exists, so report the BIOS's own count (BDA 40:75) - hardcoding 1
+        ; made a slave disk vanish. Calls for other drives chain through
+        ; untouched (see isr), the BIOS serves them as before. Floor at 1
+        ; for setups whose CMOS says "none" about the disk we serve.
+        xor     ax, ax
+        mov     es, ax
+        mov     dl, [es:0x475]
+        or      dl, dl
+        jnz     .cnt_ok
+        mov     dl, 1
+.cnt_ok:
         mov     [bp+6], dx             ; DX
         ; ES:DI are left untouched: for hard disks AH=08 returns no DPT,
         ; and callers (IO.SYS among them) assume their ES survives.

@@ -47,6 +47,11 @@ start:
         mov     ax, [g_cx]
         and     ax, 0x3F
         call    putdec
+        mov     dx, m_drv               ; AH=08 DL = hard disk count: a
+        call    puts                    ; slave must stay visible under
+        mov     al, [g_dx]              ; the overlay
+        xor     ah, ah
+        call    putdec
         mov     dx, m_crlf
         call    puts
 
@@ -136,6 +141,7 @@ dap:    db 0x10, 0
 m_cyl:  db 'disk 80h: cyls=$'
 m_head: db ' heads=$'
 m_spt:  db ' spt=$'
+m_drv:  db ' drives=$'
 m_crlf: db 13,10,'$'
 m_far:  db 'AH=42 LBA read past 504MB: $'
 m_chs:  db 'AH=02 CHS read past 504MB: $'

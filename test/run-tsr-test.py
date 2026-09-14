@@ -8,7 +8,9 @@ past the 504MB barrier.
 This is the state the disk must be in *before* it is partitioned, so the
 hard disk here is the overlay disk image used only as raw sectors (its
 marker at LBA 2,000,000 gives GEO.COM something real to read); the overlay
-is loaded from the floppy, not from the disk.
+is loaded from the floppy, not from the disk. A small standard-geometry
+slave rides the same channel: GEO's "drives=2" proves the overlay's AH=08
+reports the BIOS's drive count instead of hiding drive 81h from DOS.
 
 W95SIM then simulates the Windows INT 2Fh start/exit broadcasts. What must
 happen depends on the BIOS underneath (--trans):
@@ -99,7 +101,7 @@ def build_floppy(fd):
 def check(text, trans):
     """Assert the transcript against the expectations for this BIOS."""
     want = [
-        'cyls=540 heads=255 spt=63',
+        'cyls=540 heads=255 spt=63 drives=2',
         'self-test read past 504MB: OK',
         'already installed',
         'W95SIM: at start:           hooked',
@@ -137,6 +139,12 @@ def main():
     fd = os.path.join(BUILD, 'tsrfd.img')
     build_floppy(fd)
 
+    # a small standard-geometry slave on the same channel: the overlay must
+    # keep it visible (AH=08 has to report the BIOS's drive count, not 1)
+    slave = os.path.join(BUILD, 'slavedisk.img')
+    with open(slave, 'wb') as f:
+        f.truncate(130 * 16 * 63 * SEC)     # ~64MB, no translation needed
+
     cyls = os.path.getsize(DISK) // (SEC * 16 * 63)
     cmd = [
         'qemu-system-i386', '-m', '16', '-no-reboot',
@@ -144,6 +152,8 @@ def main():
         '-drive', f'file={DISK},format=raw,if=none,id=hd0',
         '-device', f'ide-hd,drive=hd0,bus=ide.0,unit=0,'
                    f'cyls={cyls},heads=16,secs=63,bios-chs-trans={args.trans}',
+        '-drive', f'file={slave},format=raw,if=none,id=hd1',
+        '-device', 'ide-hd,drive=hd1,bus=ide.0,unit=1',
         '-boot', 'a', '-display', 'none',
         '-monitor', f'unix:{BUILD}/tsrmon.sock,server,nowait',
     ]

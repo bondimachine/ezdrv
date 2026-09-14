@@ -235,9 +235,14 @@ and writes pay nothing at all (see `verify2f` in `src/overlay.asm`).
   format in the e2e test completes in under a minute under QEMU.
 * **LBA28** and a 1024x255x63 window: 8GB reach. CHS-only drives are
   addressed through their native geometry instead.
-* **Primary master only** as drive 80h (the loader's `/W` and the hook
-  both assume it). A second disk would need a second FDPT (INT 46h) and
-  DL=81h handling — not implemented.
+* **The overlay serves the primary master only** as drive 80h (the
+  loader's `/W` and the hook both assume it). A slave the BIOS already
+  handles stays fully visible: calls for any other drive chain to the
+  BIOS untouched, and AH=08 reports the BIOS's drive count from the BDA
+  (hardcoding 1 there is how an overlay makes drive 81h vanish — the
+  count in DL is how DOS discovers it). *Translating* a second large
+  disk would need a second FDPT (INT 46h), DL=81h dispatch and slave
+  ATA addressing — not implemented.
 * **No ATAPI.** Hard disks only.
 * FAT16/2GB per volume under MS-DOS 6.x — a DOS limit. DOS 7.1 (Win95
   OSR2+) would allow FAT32 through the same overlay, untested.
