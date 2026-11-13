@@ -49,7 +49,8 @@ start:
 
 main:
         sti
-        mov     [drive], dl
+        ; DL from the BIOS is not trusted: some old BIOSes leave garbage
+        ; there. The overlay only ever serves 80h, so that is the drive.
 
         ; carve RESERVE_KB off the top of conventional memory (BDA 40:13)
         mov     ax, 0x40
@@ -61,17 +62,26 @@ main:
         shl     ax, cl                  ; KB -> paragraph (segment) base
         mov     [ovl_seg], ax
 
-        ; read the body from sectors 2..(1+BODY_SECS) into ovl_seg:0
+        ; read the body from sectors 2..(1+BODY_SECS) into ovl_seg:0.
+        ; Old BIOSes and CF/SD adapters often fail the first multi-sector
+        ; read after POST, so reset and retry like the stock MBR does.
         mov     es, ax
+        mov     di, 5                   ; attempts
+.rd:
         xor     bx, bx
-        mov     ah, 0x02
-        mov     al, BODY_SECS
-        mov     ch, 0                   ; cylinder 0
-        mov     cl, 2                   ; sector 2 (right after the MBR)
-        mov     dh, 0                   ; head 0
-        mov     dl, [drive]
+        mov     ax, 0x0200 | BODY_SECS
+        mov     cx, 0x0002              ; cylinder 0, sector 2
+        mov     dx, 0x0080              ; head 0, drive 80h
         int     0x13
-        jc      fail_body
+        jnc     .rd_ok
+        mov     [err], ah               ; BIOS status, shown on failure
+        xor     ax, ax                  ; reset the disk system
+        mov     dl, 0x80
+        int     0x13
+        dec     di
+        jnz     .rd
+        jmp     fail_body
+.rd_ok:
 
         ; save the previous INT 13h vector into the body header
         xor     ax, ax
@@ -163,6 +173,7 @@ try_floppy:
         mov     si, msg_none
 fail_msg:
         call    print
+halt:
         cli
         hlt
         jmp     $
@@ -173,7 +184,26 @@ boot_floppy:
 
 fail_body:
         mov     si, msg_body
-        jmp     fail_msg
+        call    print
+        mov     al, [err]               ; "...load error XX": BIOS status
+        push    ax
+        mov     cl, 4
+        shr     al, cl
+        call    hexd
+        pop     ax
+        call    hexd
+        jmp     halt
+
+; hexd: print the low nibble of AL as one hex digit.
+hexd:
+        and     al, 0x0F
+        cmp     al, 10
+        sbb     al, 0x69
+        das
+        mov     ah, 0x0E
+        mov     bx, 0x0007
+        int     0x10
+        ret
 
 ; print: DS:SI -> $-less, NUL-terminated string, via BIOS teletype.
 print:
@@ -187,10 +217,11 @@ print:
 .out:
         ret
 
-drive:      db 0
+drive:      db 0x80
+err:        db 0
 ovl_seg:    dw 0
 callvec:    dd 0
-msg_body:   db 13, 10, 'EZDRV: body load error', 13, 10, 0
+msg_body:   db 13, 10, 'EZDRV: body load error ', 0
 msg_flop:   db 13, 10, 'EZDRV: C: not bootable, trying A:', 13, 10, 0
 msg_none:   db 13, 10, 'EZDRV: no boot device', 13, 10, 0
 

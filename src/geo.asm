@@ -61,15 +61,8 @@ start:
         mov     ah, 0x42
         mov     dl, 0x80
         int     0x13
-        jc      .lbad
         mov     si, buf
-        call    chk
-        jne     .lbad
-        mov     dx, m_ok
-        call    puts
-        jmp     .chs
-.lbad:  mov     dx, m_fail
-        call    puts
+        call    report
 .chs:   mov     dx, m_chs               ; AH=02 CHS read past the barrier
         call    puts
         push    ds
@@ -81,20 +74,49 @@ start:
         mov     dl, 0x80
         mov     bx, buf2
         int     0x13
-        jc      .cbad
         mov     si, buf2
-        call    chk
-        jne     .cbad
-        mov     dx, m_ok
-        call    puts
-        jmp     .fin
-.cbad:  mov     dx, m_fail
-        call    puts
+        call    report
         jmp     .fin
 .nogeo: mov     dx, m_nogeo
         call    puts
 .fin:   mov     ax, 0x4C00
         int     0x21
+
+; report: after an INT 13h read (CF/AH as returned, SI -> buffer) print
+;   OK                  read succeeded and the test-image marker is there
+;   OK (no test marker) read succeeded; a real disk holds its own data
+;                       there, so this is the expected answer outside QEMU
+;   FAIL xx             read failed, xx = INT 13h status (hex)
+report: jc      .bad
+        call    chk
+        jne     .nomark
+        mov     dx, m_ok
+        jmp     puts
+.nomark:mov     dx, m_okraw
+        jmp     puts
+.bad:   push    ax
+        mov     dx, m_failc
+        call    puts
+        pop     ax
+        mov     al, ah
+        call    puthex
+        mov     dx, m_crlf
+        jmp     puts
+
+; puthex: AL as two hex digits.
+puthex: push    ax
+        mov     cl, 4
+        shr     al, cl
+        call    .dig
+        pop     ax
+.dig:   and     al, 0x0F
+        cmp     al, 10
+        sbb     al, 0x69
+        das
+        mov     dl, al
+        mov     ah, 0x02
+        int     0x21
+        ret
 
 chk:    push    es
         push    ds
@@ -146,7 +168,8 @@ m_crlf: db 13,10,'$'
 m_far:  db 'AH=42 LBA read past 504MB: $'
 m_chs:  db 'AH=02 CHS read past 504MB: $'
 m_ok:   db 'OK', 13,10,'$'
-m_fail: db 'FAIL', 13,10,'$'
+m_okraw:db 'OK (no test marker)', 13,10,'$'
+m_failc:db 'FAIL $'
 m_nogeo:db 'AH=08 failed', 13,10,'$'
         align 16
 buf:    times 512 db 0

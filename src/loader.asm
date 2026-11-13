@@ -138,11 +138,19 @@ do_tsr:
         mov     di, st_sig              ; back on our own segment
         mov     cx, 8
         repe    cmpsb
-        jne     .stfail
         mov     dx, m_stok
-        jmp     .stprint
+        je      .stprint
+        mov     dx, m_straw             ; read fine; a real disk has its
+        jmp     .stprint                ; own data there, not the marker
 .stfail:
+        push    ax
         mov     dx, m_stbad
+        mov     ah, 0x09
+        int     0x21
+        pop     ax
+        mov     al, ah                  ; INT 13h status, in hex
+        call    puthex
+        mov     dx, m_crlf
 .stprint:
         mov     ah, 0x09
         int     0x21
@@ -261,6 +269,22 @@ is_present:
         stc
         ret
 
+; puthex: print AL as two hex digits.
+puthex:
+        push    ax
+        mov     cl, 4
+        shr     al, cl
+        call    .dig
+        pop     ax
+.dig:   and     al, 0x0F
+        cmp     al, 10
+        sbb     al, 0x69
+        das
+        mov     dl, al
+        mov     ah, 0x02
+        int     0x21
+        ret
+
 ; die: print DX string ($-terminated) and exit.
 die:
         mov     ah, 0x09
@@ -282,7 +306,9 @@ m_usage:     db 'Usage: EZDRV [/W write to disk] [/U uninstall]', 13,10,'$'
 
 
 m_stok:      db 'EZDRV: self-test read past 504MB: OK', 13,10,'$'
-m_stbad:     db 'EZDRV: self-test read past 504MB: FAILED', 13,10,'$'
+m_straw:     db 'EZDRV: self-test read past 504MB: OK (no test marker)', 13,10,'$'
+m_stbad:     db 'EZDRV: self-test read past 504MB: FAILED, status $'
+m_crlf:      db 13,10,'$'
 st_sig:      db 'OVLMARK!'
 st_dap:      db 0x10, 0
              dw 1
